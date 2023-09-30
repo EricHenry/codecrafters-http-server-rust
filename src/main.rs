@@ -10,7 +10,7 @@ fn main() {
         match stream {
             Ok(stream) => {
                 println!("accepted new connection");
-                stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n")
+                stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n");
             }
             Err(e) => {
                 println!("error: {}", e);
