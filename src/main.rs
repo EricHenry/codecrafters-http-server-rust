@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     fmt::Display,
     io::{Read, Write},
     net::TcpListener,
@@ -32,11 +32,11 @@ fn process_request(request: &Request) -> Response {
     if request.path == "/" {
         Response::new()
     } else if request.path.contains("/echo/") {
-        let segments: Vec<&str> = request.path.split('/').collect();
-        let body = segments[2].to_owned();
+        let segments: Vec<&str> = request.path.split("/echo/").collect();
+        let body = segments[1].to_owned();
 
         let mut r = Response::new();
-        let mut headers = HashMap::new();
+        let mut headers = BTreeMap::new();
         headers.insert(
             HeaderKey::ContentType,
             HeaderValue::ContentType(ContentType::TextPlain),
@@ -137,7 +137,7 @@ impl Display for StatusCode {
 }
 
 #[allow(dead_code)]
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum HeaderKey {
     ContentType,
     ContentLength,
@@ -188,7 +188,7 @@ impl Display for ContentType {
 struct Response {
     pub version: Version,
     pub status_code: StatusCode,
-    pub headers: HashMap<HeaderKey, HeaderValue>,
+    pub headers: BTreeMap<HeaderKey, HeaderValue>,
     pub body: Option<String>,
 }
 
@@ -203,7 +203,7 @@ impl Default for Response {
         Self {
             version: Version::Http1_1,
             status_code: StatusCode::Ok,
-            headers: HashMap::new(),
+            headers: BTreeMap::new(),
             body: None,
         }
     }
@@ -222,8 +222,7 @@ impl Display for Response {
         }
 
         if let Some(body) = &self.body {
-            lines.push("".to_owned());
-            lines.push(body.clone());
+            lines.push(format!("\n{body}"));
         }
 
         let r = lines.join("\r\n");
@@ -275,7 +274,7 @@ mod tests {
         println!("actual: {rs}");
 
         let expected =
-            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 5\r\n\r\nhello\r\n\r\n";
+            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 5\r\n\nhello\r\n\r\n";
         println!("expeted: {expected}");
         assert_eq!(rs.as_bytes(), expected.as_bytes())
     }
