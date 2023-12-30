@@ -17,44 +17,43 @@ fn main() {
                 let mut buffer = [0; 1028];
                 let n = stream.read(&mut buffer).unwrap();
                 let request = Request::try_from(&buffer[..n]).unwrap();
-
-                if request.path == "/" {
-                    let response = Response::new();
-                    let r = response.to_string();
-                    let _ = stream.write_all(r.as_bytes());
-                    // let _ = stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n");
-                } else if request.path.contains("/echo/") {
-                    let segments: Vec<&str> = request.path.split('/').collect();
-                    let body = segments[2].to_owned();
-
-                    let mut r = Response::new();
-                    let mut headers = HashMap::new();
-                    headers.insert(
-                        HeaderKey::ContentType,
-                        HeaderValue::ContentType(ContentType::TextPlain),
-                    );
-                    headers.insert(
-                        HeaderKey::ContentLength,
-                        HeaderValue::ContentLength(body.len()),
-                    );
-
-                    r.headers = headers;
-                    r.body = Some(body);
-
-                    let r = r.to_string();
-                    let _ = stream.write_all(r.as_bytes());
-                } else {
-                    let mut response = Response::new();
-                    response.status_code = StatusCode::NotFound;
-                    let r = response.to_string();
-                    let _ = stream.write_all(r.as_bytes());
-                    // let _ = stream.write_all(b"HTTP/1.1 404 NOT FOUND\r\n\r\n");
-                }
+                let response = process_request(&request);
+                let r = response.to_string();
+                let _ = stream.write_all(r.as_bytes());
             }
             Err(e) => {
                 println!("error: {}", e);
             }
         }
+    }
+}
+
+fn process_request(request: &Request) -> Response {
+    if request.path == "/" {
+        Response::new()
+    } else if request.path.contains("/echo/") {
+        let segments: Vec<&str> = request.path.split('/').collect();
+        let body = segments[2].to_owned();
+
+        let mut r = Response::new();
+        let mut headers = HashMap::new();
+        headers.insert(
+            HeaderKey::ContentType,
+            HeaderValue::ContentType(ContentType::TextPlain),
+        );
+        headers.insert(
+            HeaderKey::ContentLength,
+            HeaderValue::ContentLength(body.len()),
+        );
+
+        r.headers = headers;
+        r.body = Some(body);
+
+        r
+    } else {
+        let mut response = Response::new();
+        response.status_code = StatusCode::NotFound;
+        response
     }
 }
 
@@ -228,6 +227,56 @@ impl Display for Response {
         }
 
         let r = lines.join("\r\n");
-        write!(f, "{}\r\n", r)
+        write!(f, "{}\r\n\r\n", r)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn root_path() {
+        let request = Request {
+            method: Method::Get,
+            path: "/".to_owned(),
+            version: Version::Http1_1,
+        };
+
+        let response = process_request(&request);
+        let rs = response.to_string();
+
+        assert_eq!(rs.as_bytes(), b"HTTP/1.1 200 OK\r\n\r\n")
+    }
+    #[test]
+    fn not_found() {
+        let request = Request {
+            method: Method::Get,
+            path: "/bad".to_owned(),
+            version: Version::Http1_1,
+        };
+
+        let response = process_request(&request);
+        let rs = response.to_string();
+
+        assert_eq!(rs.as_bytes(), b"HTTP/1.1 404 NOT FOUND\r\n\r\n")
+    }
+
+    #[test]
+    fn echo() {
+        let request = Request {
+            method: Method::Get,
+            path: "/echo/hello".to_owned(),
+            version: Version::Http1_1,
+        };
+
+        let response = process_request(&request);
+        let rs = response.to_string();
+        println!("actual: {rs}");
+
+        let expected =
+            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 5\r\n\r\nhello\r\n\r\n";
+        println!("expeted: {expected}");
+        assert_eq!(rs.as_bytes(), expected.as_bytes())
     }
 }
