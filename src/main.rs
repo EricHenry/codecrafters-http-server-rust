@@ -50,6 +50,24 @@ fn process_request(request: &Request) -> Response {
         r.body = Some(body);
 
         r
+    } else if request.path == "/user-agent" {
+        let body = request.headers.get("User-Agent").unwrap();
+
+        let mut r = Response::new();
+        let mut headers = BTreeMap::new();
+        headers.insert(
+            HeaderKey::ContentType,
+            HeaderValue::ContentType(ContentType::TextPlain),
+        );
+        headers.insert(
+            HeaderKey::ContentLength,
+            HeaderValue::ContentLength(body.len()),
+        );
+
+        r.headers = headers;
+        r.body = Some(body.clone());
+
+        r
     } else {
         let mut response = Response::new();
         response.status_code = StatusCode::NotFound;
@@ -83,6 +101,7 @@ impl Display for Version {
 struct Request {
     method: Method,
     pub path: String,
+    pub headers: BTreeMap<String, String>,
     version: Version,
 }
 
@@ -111,10 +130,20 @@ impl TryFrom<&[u8]> for Request {
             }
         };
 
+        let mut headers = BTreeMap::new();
+        for header in &lines[1..] {
+            let h = header.split(": ").collect::<Vec<&str>>();
+            let header_key = h[0];
+            let header_value = h[1];
+
+            headers.insert(header_key.to_string(), header_value.to_string());
+        }
+
         Ok(Self {
             method,
             path,
             version,
+            headers,
         })
     }
 }
@@ -239,6 +268,7 @@ mod tests {
         let request = Request {
             method: Method::Get,
             path: "/".to_owned(),
+            headers: BTreeMap::new(),
             version: Version::Http1_1,
         };
 
@@ -252,6 +282,7 @@ mod tests {
         let request = Request {
             method: Method::Get,
             path: "/bad".to_owned(),
+            headers: BTreeMap::new(),
             version: Version::Http1_1,
         };
 
@@ -266,6 +297,7 @@ mod tests {
         let request = Request {
             method: Method::Get,
             path: "/echo/hello".to_owned(),
+            headers: BTreeMap::new(),
             version: Version::Http1_1,
         };
 
@@ -275,6 +307,25 @@ mod tests {
 
         let expected =
             "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 5\r\n\nhello\r\n\r\n";
+        println!("expeted: {expected}");
+        assert_eq!(rs.as_bytes(), expected.as_bytes())
+    }
+
+    #[test]
+    fn parse_header() {
+        let request = Request {
+            method: Method::Get,
+            path: "/user-agent".to_owned(),
+            headers: BTreeMap::from_iter([("User-Agent".to_owned(), "curl/7.64.1".to_owned())]),
+            version: Version::Http1_1,
+        };
+
+        let response = process_request(&request);
+        let rs = response.to_string();
+        println!("actual: {rs}");
+
+        let expected =
+            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\ncurl/7.64.1\r\n\r\n";
         println!("expeted: {expected}");
         assert_eq!(rs.as_bytes(), expected.as_bytes())
     }
