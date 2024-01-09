@@ -2,8 +2,10 @@ use std::{
     collections::BTreeMap,
     env,
     fmt::Display,
+    fs,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
+    path::Path,
     sync::Mutex,
     thread,
 };
@@ -60,11 +62,15 @@ fn process_request(request: &Request) -> Response {
                 get_echo(request)
             } else if request.path == "/user-agent" {
                 get_user_agent(request)
+            } else if request.path.contains("/files/") {
+                get_file(request)
             } else {
                 not_found()
             }
         }
-        Method::Post => todo!(),
+        Method::Post => {
+            todo!()
+        }
         _ => not_found(),
     }
 }
@@ -114,6 +120,43 @@ fn not_found() -> Response {
     let mut response = Response::new();
     response.status_code = StatusCode::NotFound;
     response
+}
+
+fn get_file(request: &Request) -> Response {
+    let segments: Vec<&str> = request.path.split("/files/").collect();
+    let filename = segments[1];
+
+    let sd = {
+        if let Ok(search_dir) = SEARCH_DIRECTORY.lock() {
+            search_dir.clone()
+        } else {
+            None
+        }
+    };
+
+    let Some(search_dir) = sd else {
+        return not_found();
+    };
+
+    let file_path = format!("{}/{}", search_dir, filename);
+    let path = Path::new(&file_path);
+    if !path.exists() {
+        return not_found();
+    }
+
+    // TODO: Read file
+    let body = fs::read_to_string(path).expect("to read file");
+    let mut r = Response::new();
+    let mut headers = BTreeMap::new();
+    headers.insert(
+        HeaderKey::ContentType,
+        HeaderValue::ContentType(ContentType::ApplicationOctetStream),
+    );
+
+    r.headers = headers;
+    r.body = Some(body);
+
+    r
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -248,12 +291,14 @@ impl Display for HeaderValue {
 #[allow(dead_code)]
 enum ContentType {
     TextPlain,
+    ApplicationOctetStream,
 }
 
 impl Display for ContentType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let c = match self {
             ContentType::TextPlain => "text/plain",
+            ContentType::ApplicationOctetStream => "application/octet-stream",
         };
 
         write!(f, "{}", c)
