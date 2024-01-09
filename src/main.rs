@@ -1,14 +1,19 @@
 use std::{
     collections::BTreeMap,
+    env,
     fmt::Display,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
+    sync::Mutex,
     thread,
 };
+
+static SEARCH_DIRECTORY: Mutex<Option<String>> = Mutex::new(None);
 
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     println!("Logs from your program will appear here!");
+    parse_args();
 
     let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
 
@@ -21,6 +26,17 @@ fn main() {
             }
             Err(e) => {
                 println!("error: {}", e);
+            }
+        }
+    }
+}
+
+fn parse_args() {
+    let args: Vec<String> = env::args().collect();
+    if let (Some(flag), Some(dir)) = (args.get(1), args.get(2)) {
+        if flag == "--directory" {
+            if let Ok(mut search_dir) = SEARCH_DIRECTORY.lock() {
+                *search_dir = Some(dir.to_owned());
             }
         }
     }
