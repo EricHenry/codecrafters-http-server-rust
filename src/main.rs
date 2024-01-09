@@ -75,6 +75,7 @@ fn process_request(request: &Request) -> Response {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 enum Method {
     Get,
     Post,
@@ -83,6 +84,7 @@ enum Method {
     Options,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 enum Version {
     Http1_1,
 }
@@ -98,6 +100,7 @@ impl Display for Version {
 }
 
 #[allow(dead_code)]
+#[derive(Debug, PartialEq, Eq)]
 struct Request {
     method: Method,
     pub path: String,
@@ -133,6 +136,9 @@ impl TryFrom<&[u8]> for Request {
         let mut headers = BTreeMap::new();
         for header in &lines[1..] {
             let h = header.split(": ").collect::<Vec<&str>>();
+            if h.len() != 2 {
+                continue;
+            }
             let header_key = h[0];
             let header_value = h[1];
 
@@ -261,6 +267,8 @@ impl Display for Response {
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
+
     use super::*;
 
     #[test]
@@ -312,11 +320,34 @@ mod tests {
     }
 
     #[test]
+    fn parse_request() {
+        let buffer = b"GET / HTTP/1.1\r\nHost: localhost:4221\r\nUser-Agent: Go-http-client/1.1\r\nAccept-Encoding: gzip\r\n\r\n";
+        let request = Request::try_from(&buffer[..buffer.len()]).unwrap();
+
+        let expected = Request {
+            method: Method::Get,
+            path: "/".to_owned(),
+            headers: BTreeMap::from_iter([
+                ("User-Agent".to_owned(), "Go-http-client/1.1".to_owned()),
+                ("Host".to_owned(), "localhost:4221".to_owned()),
+                ("Accept-Encoding".to_owned(), "gzip".to_owned()),
+            ]),
+            version: Version::Http1_1,
+        };
+
+        assert_eq!(request, expected)
+    }
+
+    #[test]
     fn parse_header() {
         let request = Request {
             method: Method::Get,
             path: "/user-agent".to_owned(),
-            headers: BTreeMap::from_iter([("User-Agent".to_owned(), "curl/7.64.1".to_owned())]),
+            headers: BTreeMap::from_iter([
+                ("User-Agent".to_owned(), "curl/7.64.1".to_owned()),
+                ("Host".to_owned(), "localhost:4221".to_owned()),
+                ("Accept-Encoding".to_owned(), "gzip".to_owned()),
+            ]),
             version: Version::Http1_1,
         };
 
