@@ -152,6 +152,10 @@ fn get_file(request: &Request) -> Response {
         HeaderKey::ContentType,
         HeaderValue::ContentType(ContentType::ApplicationOctetStream),
     );
+    headers.insert(
+        HeaderKey::ContentLength,
+        HeaderValue::ContentLength(body.len()),
+    );
 
     r.headers = headers;
     r.body = Some(body);
