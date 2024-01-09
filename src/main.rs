@@ -36,50 +36,68 @@ fn handle_connection(mut tcp: TcpStream) {
 }
 
 fn process_request(request: &Request) -> Response {
-    if request.path == "/" {
-        Response::new()
-    } else if request.path.contains("/echo/") {
-        let segments: Vec<&str> = request.path.split("/echo/").collect();
-        let body = segments[1].to_owned();
-
-        let mut r = Response::new();
-        let mut headers = BTreeMap::new();
-        headers.insert(
-            HeaderKey::ContentType,
-            HeaderValue::ContentType(ContentType::TextPlain),
-        );
-        headers.insert(
-            HeaderKey::ContentLength,
-            HeaderValue::ContentLength(body.len()),
-        );
-
-        r.headers = headers;
-        r.body = Some(body);
-
-        r
-    } else if request.path == "/user-agent" {
-        let body = request.headers.get("User-Agent").unwrap();
-
-        let mut r = Response::new();
-        let mut headers = BTreeMap::new();
-        headers.insert(
-            HeaderKey::ContentType,
-            HeaderValue::ContentType(ContentType::TextPlain),
-        );
-        headers.insert(
-            HeaderKey::ContentLength,
-            HeaderValue::ContentLength(body.len()),
-        );
-
-        r.headers = headers;
-        r.body = Some(body.clone());
-
-        r
-    } else {
-        let mut response = Response::new();
-        response.status_code = StatusCode::NotFound;
-        response
+    match request.method {
+        Method::Get => {
+            if request.path == "/" {
+                Response::new()
+            } else if request.path.contains("/echo/") {
+                get_echo(request)
+            } else if request.path == "/user-agent" {
+                get_user_agent(request)
+            } else {
+                not_found()
+            }
+        }
+        Method::Post => todo!(),
+        _ => not_found(),
     }
+}
+
+fn get_echo(request: &Request) -> Response {
+    let segments: Vec<&str> = request.path.split("/echo/").collect();
+    let body = segments[1].to_owned();
+
+    let mut r = Response::new();
+    let mut headers = BTreeMap::new();
+    headers.insert(
+        HeaderKey::ContentType,
+        HeaderValue::ContentType(ContentType::TextPlain),
+    );
+    headers.insert(
+        HeaderKey::ContentLength,
+        HeaderValue::ContentLength(body.len()),
+    );
+
+    r.headers = headers;
+    r.body = Some(body);
+
+    r
+}
+
+fn get_user_agent(request: &Request) -> Response {
+    let body = request.headers.get("User-Agent").unwrap();
+
+    let mut r = Response::new();
+    let mut headers = BTreeMap::new();
+    headers.insert(
+        HeaderKey::ContentType,
+        HeaderValue::ContentType(ContentType::TextPlain),
+    );
+    headers.insert(
+        HeaderKey::ContentLength,
+        HeaderValue::ContentLength(body.len()),
+    );
+
+    r.headers = headers;
+    r.body = Some(body.clone());
+
+    r
+}
+
+fn not_found() -> Response {
+    let mut response = Response::new();
+    response.status_code = StatusCode::NotFound;
+    response
 }
 
 #[derive(Debug, PartialEq, Eq)]
