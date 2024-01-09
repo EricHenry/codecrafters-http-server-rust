@@ -2,7 +2,8 @@ use std::{
     collections::BTreeMap,
     fmt::Display,
     io::{Read, Write},
-    net::TcpListener,
+    net::{TcpListener, TcpStream},
+    thread,
 };
 
 fn main() {
@@ -13,19 +14,25 @@ fn main() {
 
     for stream in listener.incoming() {
         match stream {
-            Ok(mut stream) => {
-                let mut buffer = [0; 1028];
-                let n = stream.read(&mut buffer).unwrap();
-                let request = Request::try_from(&buffer[..n]).unwrap();
-                let response = process_request(&request);
-                let r = response.to_string();
-                let _ = stream.write_all(r.as_bytes());
+            Ok(stream) => {
+                thread::spawn(move || {
+                    handle_connection(stream);
+                });
             }
             Err(e) => {
                 println!("error: {}", e);
             }
         }
     }
+}
+
+fn handle_connection(mut tcp: TcpStream) {
+    let mut buffer = [0; 1028];
+    let n = tcp.read(&mut buffer).unwrap();
+    let request = Request::try_from(&buffer[..n]).unwrap();
+    let response = process_request(&request);
+    let r = response.to_string();
+    let _ = tcp.write_all(r.as_bytes());
 }
 
 fn process_request(request: &Request) -> Response {
