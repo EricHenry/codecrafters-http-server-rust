@@ -2,13 +2,15 @@ use std::{
     collections::BTreeMap,
     env,
     fmt::Display,
-    fs,
+    fs::{self, File},
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::Path,
     sync::Mutex,
     thread,
 };
+
+use itertools::Itertools;
 
 static SEARCH_DIRECTORY: Mutex<Option<String>> = Mutex::new(None);
 
@@ -69,9 +71,43 @@ fn process_request(request: &Request) -> Response {
             }
         }
         Method::Post => {
-            todo!()
+            if request.path.contains("/files/") {
+                post_file(request)
+            } else {
+                not_found()
+            }
         }
         _ => not_found(),
+    }
+}
+
+fn post_file(req: &Request) -> Response {
+    let Some((_, filename)) = req.path.split_once("/files/") else {
+        return not_found();
+    };
+
+    let sd = SEARCH_DIRECTORY.lock().ok().and_then(|sd| sd.clone());
+
+    let Some(search_dir) = sd else {
+        return not_found();
+    };
+
+    let Some(body) = &req.body else {
+        return not_found();
+    };
+
+    let file_path = format!("{search_dir}/{filename}");
+    let path = Path::new(&file_path);
+    let Ok(mut file) = File::create(path) else {
+        return not_found();
+    };
+    if let Err(e) = file.write_all(body.as_bytes()) {
+        eprintln!("failed to write body to file: {e}");
+    }
+
+    Response {
+        status_code: StatusCode::Created,
+        ..Default::default()
     }
 }
 
@@ -194,6 +230,29 @@ struct Request {
     pub path: String,
     pub headers: BTreeMap<String, String>,
     version: Version,
+    pub body: Option<String>,
+}
+
+enum RequestToken {
+    StartLine(String),
+    Header(String),
+    Body(String),
+    Unknown(String),
+}
+
+fn parse_request(bytes: &[u8]) -> Vec<RequestToken> {
+    let mut tokens = Vec::new();
+    let headers_done = false;
+
+    let request_string = String::from_utf8_lossy(bytes);
+    for (i, line) in request_string.split("\r\n").enumerate() {
+        if i == 0 {
+            tokens.push(RequestToken::StartLine(line.to_owned()));
+        } else if !headers_done {
+        }
+    }
+
+    tokens
 }
 
 impl TryFrom<&[u8]> for Request {
@@ -225,7 +284,7 @@ impl TryFrom<&[u8]> for Request {
         for header in &lines[1..] {
             let h = header.split(": ").collect::<Vec<&str>>();
             if h.len() != 2 {
-                continue;
+                break;
             }
             let header_key = h[0];
             let header_value = h[1];
@@ -233,11 +292,28 @@ impl TryFrom<&[u8]> for Request {
             headers.insert(header_key.to_string(), header_value.to_string());
         }
 
+        let mut body = None;
+
+        if let Some((empty_line_index, _)) = lines.iter().find_position(|l| l.is_empty()) {
+            // if the last line is not empty we have a body
+            if empty_line_index != (lines.len() - 1) {
+                let mut body_str = String::new();
+                let body_start_index = empty_line_index + 1;
+
+                for &b in &lines[body_start_index..] {
+                    body_str.push_str(b);
+                }
+
+                body = Some(body_str);
+            }
+        }
+
         Ok(Self {
             method,
             path,
             version,
             headers,
+            body,
         })
     }
 }
@@ -245,6 +321,7 @@ impl TryFrom<&[u8]> for Request {
 #[allow(dead_code)]
 enum StatusCode {
     Ok,
+    Created,
     NotFound,
 }
 
@@ -252,6 +329,7 @@ impl Display for StatusCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
             StatusCode::Ok => "200 OK",
+            StatusCode::Created => "201 CREATED",
             StatusCode::NotFound => "404 NOT FOUND",
         };
 
@@ -368,6 +446,7 @@ mod tests {
             path: "/".to_owned(),
             headers: BTreeMap::new(),
             version: Version::Http1_1,
+            body: None,
         };
 
         let response = process_request(&request);
@@ -375,6 +454,26 @@ mod tests {
 
         assert_eq!(rs.as_bytes(), b"HTTP/1.1 200 OK\r\n\r\n")
     }
+
+    #[test]
+    fn parse_body() {
+        let buffer = b"POST /post HTTP/1.1\r\nHost: localhost:4221\r\nContent-Type: text/plain\r\n\nhello there\r\n\r\n";
+        let actual = Request::try_from(&buffer[..]).unwrap();
+
+        let expected = Request {
+            method: Method::Post,
+            path: "/post".to_owned(),
+            headers: BTreeMap::from_iter([
+                ("Host".to_owned(), "localhost:4221".to_owned()),
+                ("Content-Type".to_owned(), "text/plain".to_owned()),
+            ]),
+            version: Version::Http1_1,
+            body: Some("hello there".to_owned()),
+        };
+
+        assert_eq!(actual, expected)
+    }
+
     #[test]
     fn not_found() {
         let request = Request {
@@ -382,6 +481,7 @@ mod tests {
             path: "/bad".to_owned(),
             headers: BTreeMap::new(),
             version: Version::Http1_1,
+            body: None,
         };
 
         let response = process_request(&request);
@@ -397,6 +497,7 @@ mod tests {
             path: "/echo/hello".to_owned(),
             headers: BTreeMap::new(),
             version: Version::Http1_1,
+            body: None,
         };
 
         let response = process_request(&request);
@@ -423,6 +524,7 @@ mod tests {
                 ("Accept-Encoding".to_owned(), "gzip".to_owned()),
             ]),
             version: Version::Http1_1,
+            body: None,
         };
 
         assert_eq!(request, expected)
@@ -439,6 +541,7 @@ mod tests {
                 ("Accept-Encoding".to_owned(), "gzip".to_owned()),
             ]),
             version: Version::Http1_1,
+            body: None,
         };
 
         let response = process_request(&request);
